@@ -185,33 +185,19 @@ video { display: none; }
   <video id="video" autoplay playsinline muted></video>
   <canvas id="preview"></canvas>
 
-  <div class="controls" id="controls">
-    <div class="slider-row">
-      <label>soft</label>
-      <input type="range" id="blur" min="0" max="10" step="0.5" value="3.5">
-    </div>
-    <div class="slider-row">
-      <label>bright</label>
-      <input type="range" id="bright" min="0.8" max="1.5" step="0.05" value="1.15">
-    </div>
-    <div class="slider-row">
-      <label>warm</label>
-      <input type="range" id="warm" min="0" max="30" step="2" value="14">
-    </div>
-    <div class="slider-row">
-      <label>smooth</label>
-      <input type="range" id="smooth" min="0" max="100" step="5" value="65">
-    </div>
-    <div class="slider-row">
-      <label>spot</label>
-      <input type="range" id="spot" min="0" max="100" step="5" value="60">
-    </div>
+  <!-- 슬라이더 숨김, 자동보정 고정값 -->
+  <div style="display:none">
+    <input type="range" id="blur" value="3.5">
+    <input type="range" id="bright" value="1.15">
+    <input type="range" id="warm" value="14">
+    <input type="range" id="smooth" value="65">
+    <input type="range" id="spot" value="60">
   </div>
 
   <div class="bottom-bar">
     <button class="btn-icon" id="btnFlip">&#x21C4;</button>
     <button class="shutter" id="btnShutter"></button>
-    <button class="btn-icon" id="btnTune">&#x2699;</button>
+    <div style="width:44px"></div>
   </div>
 </div>
 

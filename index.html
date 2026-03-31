@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Soft Camera</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow: hidden;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.camera-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+video, canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+video { display: none; }
+
+#preview {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+
+/* 슬라이더 영역 */
+.controls {
+  position: absolute;
+  bottom: 120px;
+  left: 0; right: 0;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.controls.show { opacity: 1; }
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.slider-row label {
+  font-size: 11px;
+  width: 36px;
+  text-align: right;
+  opacity: 0.7;
+}
+.slider-row input[type=range] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  background: rgba(255,255,255,0.3);
+  border-radius: 2px;
+  outline: none;
+}
+.slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px; height: 20px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+
+/* 하단 버튼 */
+.bottom-bar {
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  padding-bottom: 20px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.6));
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+}
+
+.shutter {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  border: 4px solid #fff;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.shutter::after {
+  content: '';
+  position: absolute;
+  top: 4px; left: 4px; right: 4px; bottom: 4px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.1s;
+}
+.shutter:active::after { transform: scale(0.9); }
+
+.btn-icon {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 플래시 효과 */
+.flash {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+.flash.active {
+  animation: flash 0.3s ease-out;
+}
+@keyframes flash {
+  0% { opacity: 0.8; }
+  100% { opacity: 0; }
+}
+
+/* 저장된 사진 미리보기 */
+.saved-preview {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #000;
+  z-index: 50;
+  display: none;
+  flex-direction: column;
+}
+.saved-preview.show { display: flex; }
+.saved-preview img {
+  flex: 1;
+  object-fit: contain;
+  width: 100%;
+}
+.saved-bar {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  padding-bottom: 20px;
+}
+.saved-bar button {
+  padding: 10px 28px;
+  border-radius: 24px;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-back { background: rgba(255,255,255,0.15); color: #fff; }
+.btn-save { background: #fff; color: #000; }
+</style>
+</head>
+<body>
+
+<div class="camera-wrap">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="preview"></canvas>
+
+  <div class="controls" id="controls">
+    <div class="slider-row">
+      <label>soft</label>
+      <input type="range" id="blur" min="0" max="10" step="0.5" value="2.5">
+    </div>
+    <div class="slider-row">
+      <label>bright</label>
+      <input type="range" id="bright" min="0.8" max="1.5" step="0.05" value="1.1">
+    </div>
+    <div class="slider-row">
+      <label>warm</label>
+      <input type="range" id="warm" min="0" max="30" step="2" value="10">
+    </div>
+    <div class="slider-row">
+      <label>smooth</label>
+      <input type="range" id="smooth" min="0" max="100" step="5" value="40">
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <button class="btn-icon" id="btnFlip">&#x21C4;</button>
+    <button class="shutter" id="btnShutter"></button>
+    <button class="btn-icon" id="btnTune">&#x2699;</button>
+  </div>
+</div>
+
+<div class="flash" id="flash"></div>
+
+<div class="saved-preview" id="savedPreview">
+  <img id="savedImg" src="">
+  <div class="saved-bar">
+    <button class="btn-back" id="btnDiscard">Back</button>
+    <button class="btn-save" id="btnDownload">Save</button>
+  </div>
+</div>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('preview');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+const sliderBlur = document.getElementById('blur');
+const sliderBright = document.getElementById('bright');
+const sliderWarm = document.getElementById('warm');
+const sliderSmooth = document.getElementById('smooth');
+const controls = document.getElementById('controls');
+const flash = document.getElementById('flash');
+const savedPreview = document.getElementById('savedPreview');
+const savedImg = document.getElementById('savedImg');
+
+let facingMode = 'user'; // 전면 기본
+let stream = null;
+let animId = null;
+
+// 카메라 시작
+async function startCamera() {
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: facingMode,
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    if (!animId) renderLoop();
+  } catch(e) {
+    alert('Camera error: ' + e.message);
+  }
+}
+
+// 렌더링 루프
+function renderLoop() {
+  if (video.readyState >= 2) {
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // 전면 카메라 좌우반전
+    ctx.save();
+    if (facingMode === 'user') {
+      ctx.translate(w, 0);
+      ctx.scale(-1, 1);
+    }
+
+    // CSS filter로 뽀샤시 효과
+    const blurVal = parseFloat(sliderBlur.value);
+    const brightVal = parseFloat(sliderBright.value);
+    const smoothVal = parseInt(sliderSmooth.value);
+
+    // 기본: 밝기 + 약간 대비 낮춤 + 채도 살짝 올림
+    ctx.filter = `blur(${blurVal}px) brightness(${brightVal}) contrast(0.95) saturate(1.05)`;
+    ctx.drawImage(video, 0, 0, w, h);
+    ctx.restore();
+
+    // 따뜻한 톤 오버레이
+    const warmVal = parseInt(sliderWarm.value);
+    if (warmVal > 0) {
+      ctx.fillStyle = `rgba(255, ${180 + warmVal}, ${140 + warmVal}, ${warmVal / 300})`;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // 소프트 스킨 (약한 반투명 오버레이)
+    if (smoothVal > 0) {
+      ctx.globalAlpha = smoothVal / 400;
+      ctx.filter = `blur(${4 + blurVal}px)`;
+      if (facingMode === 'user') {
+        ctx.save();
+        ctx.translate(w, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0, w, h);
+        ctx.restore();
+      } else {
+        ctx.drawImage(video, 0, 0, w, h);
+      }
+      ctx.globalAlpha = 1.0;
+      ctx.filter = 'none';
+    }
+  }
+  animId = requestAnimationFrame(renderLoop);
+}
+
+// 사진 촬영
+document.getElementById('btnShutter').addEventListener('click', () => {
+  // 플래시 효과
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 300);
+
+  // 고해상도 캡처용 캔버스
+  const capCanvas = document.createElement('canvas');
+  capCanvas.width = canvas.width;
+  capCanvas.height = canvas.height;
+  const capCtx = capCanvas.getContext('2d');
+  capCtx.drawImage(canvas, 0, 0);
+
+  const dataUrl = capCanvas.toDataURL('image/jpeg', 0.95);
+  savedImg.src = dataUrl;
+  savedPreview.classList.add('show');
+});
+
+// 카메라 전환
+document.getElementById('btnFlip').addEventListener('click', () => {
+  facingMode = facingMode === 'user' ? 'environment' : 'user';
+  startCamera();
+});
+
+// 튜닝 패널 토글
+document.getElementById('btnTune').addEventListener('click', () => {
+  controls.classList.toggle('show');
+});
+
+// 사진 저장
+document.getElementById('btnDownload').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = savedImg.src;
+  const now = new Date();
+  a.download = `soft_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}.jpg`;
+  a.click();
+  savedPreview.classList.remove('show');
+});
+
+// 뒤로
+document.getElementById('btnDiscard').addEventListener('click', () => {
+  savedPreview.classList.remove('show');
+});
+
+// 시작
+startCamera();
+</script>
+</body>
+</html>

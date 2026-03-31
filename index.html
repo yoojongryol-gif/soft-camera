@@ -188,19 +188,23 @@ video { display: none; }
   <div class="controls" id="controls">
     <div class="slider-row">
       <label>soft</label>
-      <input type="range" id="blur" min="0" max="10" step="0.5" value="2.5">
+      <input type="range" id="blur" min="0" max="10" step="0.5" value="3.5">
     </div>
     <div class="slider-row">
       <label>bright</label>
-      <input type="range" id="bright" min="0.8" max="1.5" step="0.05" value="1.1">
+      <input type="range" id="bright" min="0.8" max="1.5" step="0.05" value="1.15">
     </div>
     <div class="slider-row">
       <label>warm</label>
-      <input type="range" id="warm" min="0" max="30" step="2" value="10">
+      <input type="range" id="warm" min="0" max="30" step="2" value="14">
     </div>
     <div class="slider-row">
       <label>smooth</label>
-      <input type="range" id="smooth" min="0" max="100" step="5" value="40">
+      <input type="range" id="smooth" min="0" max="100" step="5" value="65">
+    </div>
+    <div class="slider-row">
+      <label>spot</label>
+      <input type="range" id="spot" min="0" max="100" step="5" value="60">
     </div>
   </div>
 
@@ -263,52 +267,105 @@ async function startCamera() {
   }
 }
 
+// 오프스크린 캔버스 (피부 보정용)
+const offCanvas = document.createElement('canvas');
+const offCtx = offCanvas.getContext('2d');
+
 // 렌더링 루프
 function renderLoop() {
   if (video.readyState >= 2) {
     const w = canvas.width;
     const h = canvas.height;
+    offCanvas.width = w;
+    offCanvas.height = h;
 
-    // 전면 카메라 좌우반전
-    ctx.save();
-    if (facingMode === 'user') {
-      ctx.translate(w, 0);
-      ctx.scale(-1, 1);
-    }
-
-    // CSS filter로 뽀샤시 효과
     const blurVal = parseFloat(sliderBlur.value);
     const brightVal = parseFloat(sliderBright.value);
+    const warmVal = parseInt(sliderWarm.value);
     const smoothVal = parseInt(sliderSmooth.value);
 
-    // 기본: 밝기 + 약간 대비 낮춤 + 채도 살짝 올림
-    ctx.filter = `blur(${blurVal}px) brightness(${brightVal}) contrast(0.95) saturate(1.05)`;
-    ctx.drawImage(video, 0, 0, w, h);
-    ctx.restore();
+    // === 1단계: 원본 그리기 (좌우반전 포함) ===
+    offCtx.save();
+    if (facingMode === 'user') {
+      offCtx.translate(w, 0);
+      offCtx.scale(-1, 1);
+    }
+    offCtx.filter = 'none';
+    offCtx.drawImage(video, 0, 0, w, h);
+    offCtx.restore();
 
-    // 따뜻한 톤 오버레이
-    const warmVal = parseInt(sliderWarm.value);
+    // === 2단계: 메인 캔버스에 밝기+대비 보정 ===
+    ctx.filter = `brightness(${brightVal}) contrast(0.9) saturate(1.1)`;
+    ctx.drawImage(offCanvas, 0, 0);
+    ctx.filter = 'none';
+
+    // === 3단계: 피부 스무딩 (블러 레이어 블렌딩) ===
+    if (smoothVal > 0) {
+      // 강한 블러 레이어
+      offCtx.filter = `blur(${6 + blurVal * 2}px)`;
+      offCtx.save();
+      if (facingMode === 'user') {
+        offCtx.translate(w, 0);
+        offCtx.scale(-1, 1);
+      }
+      offCtx.drawImage(video, 0, 0, w, h);
+      offCtx.restore();
+      offCtx.filter = 'none';
+
+      // 블러 레이어를 원본 위에 반투명 합성
+      ctx.globalAlpha = smoothVal / 100 * 0.6;
+      ctx.drawImage(offCanvas, 0, 0);
+      ctx.globalAlpha = 1.0;
+    }
+
+    // === 4단계: 소프트 글로우 (밝은 부분 블룸) ===
+    if (blurVal > 0) {
+      offCtx.filter = `blur(${blurVal * 3}px) brightness(1.3)`;
+      offCtx.save();
+      if (facingMode === 'user') {
+        offCtx.translate(w, 0);
+        offCtx.scale(-1, 1);
+      }
+      offCtx.drawImage(video, 0, 0, w, h);
+      offCtx.restore();
+      offCtx.filter = 'none';
+
+      // screen 블렌딩 효과 (글로우)
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = blurVal / 10 * 0.35;
+      ctx.drawImage(offCanvas, 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1.0;
+    }
+
+    // === 5단계: 잡티/기미 제거 (중간 블러 + 하이패스 역보정) ===
+    const spotVal = parseInt(document.getElementById('spot').value);
+    if (spotVal > 0) {
+      // 중간 강도 블러로 잡티 영역 평탄화
+      offCtx.filter = `blur(${3 + spotVal / 20}px)`;
+      offCtx.drawImage(canvas, 0, 0);
+      offCtx.filter = 'none';
+
+      // 원본 대비 블러 차이 → 어두운 점(잡티)만 보정
+      ctx.globalCompositeOperation = 'lighten';
+      ctx.globalAlpha = spotVal / 100 * 0.5;
+      ctx.drawImage(offCanvas, 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1.0;
+    }
+
+    // === 6단계: 따뜻한 톤 ===
     if (warmVal > 0) {
-      ctx.fillStyle = `rgba(255, ${180 + warmVal}, ${140 + warmVal}, ${warmVal / 300})`;
+      ctx.fillStyle = `rgba(255, 200, 160, ${warmVal / 200})`;
       ctx.fillRect(0, 0, w, h);
     }
 
-    // 소프트 스킨 (약한 반투명 오버레이)
-    if (smoothVal > 0) {
-      ctx.globalAlpha = smoothVal / 400;
-      ctx.filter = `blur(${4 + blurVal}px)`;
-      if (facingMode === 'user') {
-        ctx.save();
-        ctx.translate(w, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(video, 0, 0, w, h);
-        ctx.restore();
-      } else {
-        ctx.drawImage(video, 0, 0, w, h);
-      }
-      ctx.globalAlpha = 1.0;
-      ctx.filter = 'none';
-    }
+    // === 7단계: 살짝 비네팅 (가장자리 어둡게) ===
+    const gradient = ctx.createRadialGradient(w/2, h/2, w*0.3, w/2, h/2, w*0.8);
+    gradient.addColorStop(0, 'rgba(0,0,0,0)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0.15)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
   }
   animId = requestAnimationFrame(renderLoop);
 }
